@@ -15,7 +15,12 @@ import (
 )
 
 var (
-	attackers     = make(map[string]*Attack)
+	attackers     = make(map[string]interface{})
+	attacks = make(map[string]interface{})
+	totals = make(map[string]interface{})
+	urls = make(map[string]int)
+	methods = make(map[string]int)
+	interestingRequests = make(map[string]int)
 	sshLogPattern = regexp.MustCompile(`^auth.log(\.\d+)?$`)
 )
 
@@ -50,6 +55,12 @@ func main() {
 			os.Exit(-1)
 		}
 
+		totals["methods"] = methods
+		totals["urls"] = urls
+		attackers["attacks"] = attacks
+		attackers["totals"] = totals
+		attackers["interesting_requests"] = interestingRequests
+
 		for _, fileInfo := range files {
 			// Ignore directories and files we don't care about
 			if fileInfo.IsDir() ||
@@ -62,13 +73,14 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Could not open file: %s", err)
 				continue
 			}
+			defer file.Close()
 
             if NginxLogPattern.MatchString(fileInfo.Name()) {
 			    ReadNginxLog(file)
             }
 		}
 
-        encoded, _ := json.Marshal(attackers)
+        encoded, _ := json.MarshalIndent(attackers, "", "    ")
 
         fmt.Println(string(encoded))
 	}

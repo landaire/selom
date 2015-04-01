@@ -5,22 +5,25 @@ import (
 	"os"
 	"regexp"
 
+	"fmt"
+
 	"github.com/satyrius/gonx"
-    "fmt"
+    "strings"
 )
 
 const (
-	logFormat   = `$remote_addr - - [$time_local] "$request" $status $bytes_sent "$http_referer" "$http_user_agent"`
+	logFormat = `$remote_addr - - [$time_local] "$request" $status $bytes_sent "$http_referer" "$http_user_agent"`
 )
 
 var (
 	NginxLogPattern    = regexp.MustCompile(`^access.log(\.\d+)?$`)
-	suspiciousPatterns = regexp.MustCompile(`(php|admin|muieblackcat|wp-|cgi|\.\.)`)
+	suspiciousPatterns = regexp.MustCompile(`(?i)(php|admin|muieblackcat|wp-|cgi|\.\.|aspx|asp)+`)
 	nginxParser        = gonx.NewParser(logFormat)
+    urlPattern         = regexp.MustCompile(`(?i)(?P<method>\S+)\s+(?P<uri>\S*)\s+HTTP\/1.\d`)
 )
 
 type Nginx struct {
-    Request, Referrer string
+	Request, Referrer string
 }
 
 func ReadNginxLog(logFile *os.File) {
@@ -32,36 +35,65 @@ func ReadNginxLog(logFile *os.File) {
 		if err == io.EOF {
 			break
 		} else if err != nil {
-            fmt.Fprintln(os.Stderr, err)
-        }
+			fmt.Fprintln(os.Stderr, err)
+		}
 
-        request, _ := rec.Field("request")
-        if !suspiciousPatterns.MatchString(request) {
+		request, _ := rec.Field("request")
+
+        if !urlPattern.MatchString(request) {
+            interestingRequests[request]++
             continue
         }
 
-        referrer, _ := rec.Field("http_referer")
-        userAgent, _ := rec.Field("http_user_agent")
-        ip, _ := rec.Field("remote_addr")
+		if !suspiciousPatterns.MatchString(request) {
+			continue
+		}
+
+		referrer, _ := rec.Field("http_referer")
+
+        // ignore my uncle's site
+        if strings.Contains(referrer, "mglands") {
+            continue
+        }
+
+		userAgent, _ := rec.Field("http_user_agent")
+		ip, _ := rec.Field("remote_addr")
+
+		if referrer == "-" {
+			referrer = ""
+		}
 
 		// shitty naming
 		nginxAttack := Nginx{
-            Request: request,
-            Referrer: referrer,
-        }
-
-        var attack *Attack
-
-        attack, ok := attackers[ip];
-		if !ok {
-			attack = NewAttack()
-            attackers[ip] = attack
+			Request:  request,
+			Referrer: referrer,
 		}
 
-        if attack.UserAgent == "" {
-            attack.UserAgent = userAgent
+		var attack *Attack
+
+        // This kind of has a different meaning from just doing "attack, ok := attackers["attacks"][ip]" since in that context
+        // ok would tell us whether or not that element exists. In this case, "ok" tells us whether or not the type assertion
+        // succeeded. So I guess if you consider trying to cast nil to a type the same as something just not existing,
+        // then yeah they're the same thing. Regardless, this works.
+		attack, ok := attacks[ip].(*Attack)
+		if !ok {
+			attack = NewAttack()
+			attacks[ip] = attack
+		}
+
+		if attack.UserAgent == "" {
+			attack.UserAgent = userAgent
+		}
+
+		attack.Nginx = append(attack.Nginx, nginxAttack)
+
+        match := urlPattern.FindStringSubmatch(request)
+        result := make(map[string]string)
+        for i, name := range urlPattern.SubexpNames() {
+            result[name] = match[i]
         }
 
-        attack.Nginx = append(attack.Nginx, nginxAttack)
+        urls[result["uri"]]++
+        methods[result["method"]]++
 	}
 }
