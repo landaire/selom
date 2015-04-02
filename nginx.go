@@ -20,6 +20,8 @@ var (
 	suspiciousPatterns = regexp.MustCompile(`(?i)(php|admin|muieblackcat|wp-|cgi|\.\.|aspx|asp)+`)
 	nginxParser        = gonx.NewParser(logFormat)
     urlPattern         = regexp.MustCompile(`(?i)(?P<method>\S+)\s+(?P<uri>\S*)\s+HTTP\/1.\d`)
+    // Most User-Agents will include that they're like Mozilla. Ones that don't are suspicious.
+    interestingReferrerPattern = regexp.MustCompile(`(?i)(mozilla|googlebot|python|spider|crawler)`)
 )
 
 type Nginx struct {
@@ -39,6 +41,14 @@ func ReadNginxLog(logFile *os.File) {
 		}
 
 		request, _ := rec.Field("request")
+        userAgent, _ := rec.Field("http_user_agent")
+        if userAgent == "-" {
+            userAgent = ""
+        }
+
+        if userAgent != "" && !interestingReferrerPattern.MatchString(userAgent) {
+            interestingUserAgents[userAgent]++
+        }
 
         if !urlPattern.MatchString(request) {
             interestingRequests[request]++
@@ -49,19 +59,17 @@ func ReadNginxLog(logFile *os.File) {
 			continue
 		}
 
-		referrer, _ := rec.Field("http_referer")
 
+		referrer, _ := rec.Field("http_referer")
         // ignore my uncle's site
         if strings.Contains(referrer, "mglands") {
             continue
         }
-
-		userAgent, _ := rec.Field("http_user_agent")
-		ip, _ := rec.Field("remote_addr")
-
 		if referrer == "-" {
 			referrer = ""
 		}
+
+		ip, _ := rec.Field("remote_addr")
 
 		// shitty naming
 		nginxAttack := Nginx{

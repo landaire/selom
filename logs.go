@@ -21,6 +21,7 @@ var (
 	urls                = make(map[string]int)
 	methods             = make(map[string]int)
 	interestingRequests = make(map[string]int)
+	interestingUserAgents = make(map[string]int)
 
 	invalidUsers = make(map[string]int)
 )
@@ -62,6 +63,7 @@ func main() {
 		attackers["attacks"] = attacks
 		attackers["totals"] = totals
 		attackers["interesting_requests"] = interestingRequests
+		attackers["interesting_user_agents"] = interestingUserAgents
 
 		for _, fileInfo := range files {
 			// Ignore directories and files we don't care about
